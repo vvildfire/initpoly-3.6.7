@@ -1,0 +1,545 @@
+diff --git a/include/config.h b/include/config.h
+index 141a684..ef5f9fa 100644
+--- a/include/config.h
++++ b/include/config.h
+@@ -453,6 +453,12 @@ typedef unsigned char uchar;
+    but it isn't necessary for successful operation of the program */
+ #define FREE_ALL_MEMORY             /* free all memory at exit */
+ 
++#define INITPOLY	/* Prompt to select non-standard initial race */
++
++#define ALWAYS_INITPOLY /* Prompt when not in explore or wizard mode */
++ 
++#define ALIGN_INITPOLY  /* change alignment according to polymorphed form */
++
+ /* End of Section 4 */
+ 
+ #include "global.h" /* Define everything else according to choices above */
+diff --git a/include/decl.h b/include/decl.h
+index 128413a..e77a9ee 100644
+--- a/include/decl.h
++++ b/include/decl.h
+@@ -413,6 +413,13 @@ E struct plinemsg_type *plinemsg_types;
+ E char *ARGV0;
+ #endif
+ 
++#ifdef INITPOLY
++E NEARDATA int polyflags; /* Use for flags modifying the polymorph system. */
++#define POLYFLAGS_INITPOLY 1 /* Player is initpoly'd */
++#define POLYFLAGS_PERSISTENT POLYFLAGS_INITPOLY /* Flags that should not be reset after one-time uses. */
++#define Uinitpolyd (polyflags | POLYFLAGS_INITPOLY)
++#endif
++
+ #undef E
+ 
+ #endif /* DECL_H */
+diff --git a/include/youprop.h b/include/youprop.h
+index 79fa70a..3ca5c16 100644
+--- a/include/youprop.h
++++ b/include/youprop.h
+@@ -55,7 +55,12 @@
+ /* Hxxx due to FROMFORM only */
+ #define HAntimagic u.uprops[ANTIMAGIC].intrinsic
+ #define EAntimagic u.uprops[ANTIMAGIC].extrinsic
++#ifdef INITPOLY
++#define Antimagic (EAntimagic || \
++ 		 ((Upolyd || Uinitpolyd) && resists_magm(&youmonst)))
++#else
+ #define Antimagic (HAntimagic || EAntimagic)
++#endif
+ 
+ #define HAcid_resistance u.uprops[ACID_RES].intrinsic
+ #define EAcid_resistance u.uprops[ACID_RES].extrinsic
+@@ -107,7 +112,12 @@
+ #define HHallucination u.uprops[HALLUC].intrinsic
+ #define HHalluc_resistance u.uprops[HALLUC_RES].intrinsic
+ #define EHalluc_resistance u.uprops[HALLUC_RES].extrinsic
++#ifdef INITPOLY
++#define Halluc_resistance (EHalluc_resistance || \
++                          (dmgtype(youmonst.data, AD_HALU)))
++#else
+ #define Halluc_resistance (HHalluc_resistance || EHalluc_resistance)
++#endif
+ #define Hallucination (HHallucination && !Halluc_resistance)
+ 
+ /* Timeout, plus a worn mask */
+diff --git a/src/allmain.c b/src/allmain.c
+index 962df4c..9994adf 100644
+--- a/src/allmain.c
++++ b/src/allmain.c
+@@ -10,6 +10,27 @@
+ #include <signal.h>
+ #endif
+ 
++static const int player_classes[] =
++  {
++    PM_ARCHEOLOGIST,
++    PM_BARBARIAN,
++    PM_CAVEMAN,
++    PM_CAVEWOMAN,
++    PM_HEALER,
++    PM_KNIGHT,
++    PM_MONK,
++    PM_PRIEST,
++    PM_PRIESTESS,
++    PM_RANGER,
++    PM_ROGUE,
++    PM_SAMURAI,
++    PM_TOURIST,
++    PM_VALKYRIE,
++    PM_WIZARD,
++    -1
++  };
++
++
+ #ifdef POSITIONBAR
+ STATIC_DCL void NDECL(do_positionbar);
+ #endif
+@@ -532,6 +553,10 @@ newgame()
+ {
+     int i;
+ 
++#ifdef ALIGN_INITPOLY
++    aligntyp alignment;
++#endif   
++    
+ #ifdef MFLOPPY
+     gameDiskPrompt();
+ #endif
+@@ -587,6 +612,61 @@ newgame()
+         com_pager(1);
+     }
+ 
++#ifdef INITPOLY
++	if((
++#ifdef ALWAYS_INITPOLY
++	    1 ||
++#endif
++	    discover
++#ifdef WIZARD
++	   || wizard
++#endif
++	    ) && (yn("Do you wish to permanently polymorph into a non-default race?") == 'y')){
++	  /*		polyself(1);*/
++	  
++	  int mntmp = LOW_PM - 1;
++	  char buf[BUFSZ];
++	  while(mntmp < LOW_PM){
++	    getlin("Start as what kind of monster? [type the name]",buf);
++	    mntmp = name_to_mon(buf);
++	    if (mntmp < LOW_PM)
++	      pline("I've never heard of such monsters.");
++	    if(
++	       (mntmp == PM_HUMAN) ||
++	       (mntmp == PM_ELF  ) ||
++	       (mntmp == PM_DWARF) ||
++	       (mntmp == PM_GNOME) ||
++	       (mntmp == PM_ORC)
++	       ){
++	      pline("Just choose that at the race selection screen!");
++	      mntmp = LOW_PM - 1;
++	    }
++#ifndef INITPOLY_WILD_SILLY_FUN
++	    /* Don't polymorph into anything unique, like DEATH... unless you want to forgoe all hopes of seriousness :) */
++	    if(mntmp >= LOW_PM && !polyok(&mons[mntmp])){
++	      pline("You can't start as that!");
++	      mntmp = LOW_PM - 1;
++	    }
++#endif
++	  }
++	  polymon(mntmp);
++	  u.mtimedone = 0;
++	  u.umonster = u.umonnum;
++#ifdef ALIGN_INITPOLY
++	  /* adjust alignment (from pline.c:mstatusline:280) */
++	  alignment = mons[u.umonnum].maligntyp;
++	  alignment = (alignment > 0) ? A_LAWFUL :
++	    (alignment < 0) ? A_CHAOTIC :
++	    A_NEUTRAL;
++	  if (u.ualign.type != alignment) {
++	    Your("mind oscillates for a moment.");
++	    u.ualignbase[A_CURRENT] = u.ualignbase[A_ORIGINAL] = u.ualign.type = alignment;
++	  }
++	  docrt();
++#endif
++	} 
++#endif
++
+ #ifdef INSURANCE
+     save_currentstate();
+ #endif
+@@ -610,6 +690,10 @@ welcome(new_game)
+ boolean new_game; /* false => restoring an old game */
+ {
+     char buf[BUFSZ];
++    const char *racename;
++#ifdef INITPOLY
++    const int *pc_current = player_classes;
++#endif
+     boolean currentgend = Upolyd ? u.mfemale : flags.female;
+ 
+     /*
+@@ -628,10 +712,46 @@ boolean new_game; /* false => restoring an old game */
+                 ? (urole.allow & ROLE_GENDMASK) == (ROLE_MALE | ROLE_FEMALE)
+                 : currentgend != flags.initgend))
+         Sprintf(eos(buf), " %s", genders[currentgend].adj);
++#ifdef INITPOLY
++    if(
++       (u.umonnum != PM_HUMAN) && 
++       (u.umonnum != PM_ELF  ) && 
++       (u.umonnum != PM_DWARF) && 
++       (u.umonnum != PM_GNOME) && 
++       (u.umonnum != PM_ORC  )
++       ){
++      polyflags |= POLYFLAGS_INITPOLY;
++    }
++
++    if(!Uinitpolyd)
++#endif
++      racename= urace.adj;
++#ifdef INITPOLY
++    else
++      racename = mons[u.umonster].mname;
++#endif
++
++#ifdef INITPOLY
++    polyflags |= POLYFLAGS_INITPOLY;
++    while(*pc_current != -1){
++      if(*pc_current == u.umonnum){
++	polyflags &= ~POLYFLAGS_INITPOLY;
++	break;
++      }
++      pc_current++;
++    }
++
++    if(!Uinitpolyd)
++#endif
++      racename= urace.adj;
++#ifdef INITPOLY
++    else
++      racename = mons[u.umonster].mname;
++#endif
+ 
+     pline(new_game ? "%s %s, welcome to NetHack!  You are a%s %s %s."
+                    : "%s %s, the%s %s %s, welcome back to NetHack!",
+-          Hello((struct monst *) 0), plname, buf, urace.adj,
++          Hello((struct monst *) 0), plname, buf, racename,
+           (currentgend && urole.name.f) ? urole.name.f : urole.name.m);
+ }
+ 
+diff --git a/src/cmd.c b/src/cmd.c
+index 8fd20ef..5b6cbfc 100644
+--- a/src/cmd.c
++++ b/src/cmd.c
+@@ -520,8 +520,12 @@ domonability(VOID_ARGS)
+             aggravate();
+     } else if (youmonst.data->mlet == S_VAMPIRE)
+         return dopoly();
++#ifdef INITPOLY
++    } else if (Upolyd || Uinitpolyd)
++#else
+     else if (Upolyd)
+-        pline("Any special ability you may have is purely reflexive.");
++#endif
++	pline("Any special ability you may have is purely reflexive.");
+     else
+         You("don't have a special ability in your normal form!");
+     return 0;
+@@ -2354,7 +2358,11 @@ minimal_enlightenment()
+     add_menu(tmpwin, NO_GLYPH, &any, 0, 0, ATR_NONE, "", FALSE);
+     add_menu(tmpwin, NO_GLYPH, &any, 0, 0, iflags.menu_headings,
+              "Current", FALSE);
++#ifdef INITPOLY
++    Sprintf(buf, fmtstr, "race", (Upolyd || Uinitpolyd) ? youmonst.data->mname : urace.noun);
++#else   
+     Sprintf(buf, fmtstr, "race", Upolyd ? youmonst.data->mname : urace.noun);
++#endif
+     add_menu(tmpwin, NO_GLYPH, &any, 0, 0, ATR_NONE, buf, FALSE);
+     if (Upolyd) {
+         Sprintf(buf, fmtstr, "role (base)",
+diff --git a/src/decl.c b/src/decl.c
+index 944dbe3..b92bc90 100644
+--- a/src/decl.c
++++ b/src/decl.c
+@@ -338,6 +338,8 @@ char *ARGV0;
+ /* support for lint.h */
+ unsigned nhUse_dummy = 0;
+ 
++NEARDATA int polyflags = 0;
++
+ /* dummy routine used to force linkage */
+ void
+ decl_init()
+diff --git a/src/engrave.c b/src/engrave.c
+index 3cc5592..9c5a7b5 100644
+--- a/src/engrave.c
++++ b/src/engrave.c
+@@ -519,7 +519,11 @@ doengrave()
+         You_cant("write here.");
+         return 0;
+     }
++#ifdef INITPOLY
++    if (cantwield(youmonst.data) && !attacktype(youmonst.data, AT_CLAW)) {
++#else
+     if (cantwield(youmonst.data)) {
++#endif
+         You_cant("even hold anything!");
+         return 0;
+     }
+@@ -530,7 +534,15 @@ doengrave()
+      * Edited by GAN 10/20/86 so as not to change weapon wielded.
+      */
+ 
++#ifdef INITPOLY
++    if (cantwield(youmonst.data) && attacktype(youmonst.data, AT_CLAW)) {
++	otmp = &zeroobj;
++    } else {
++#endif
+     otmp = getobj(styluses, "write with");
++#ifdef INITPOLY
++    }
++#endif
+     if (!otmp) /* otmp == zeroobj if fingers */
+         return 0;
+ 
+diff --git a/src/exper.c b/src/exper.c
+index 06456e0..f8a33e0 100644
+--- a/src/exper.c
++++ b/src/exper.c
+@@ -7,6 +7,7 @@
+ 
+ STATIC_DCL long FDECL(newuexp, (int));
+ STATIC_DCL int FDECL(enermod, (int));
++STATIC_DCL void FDECL(ugrowup, ());
+ 
+ STATIC_OVL long
+ newuexp(lev)
+@@ -38,6 +39,64 @@ int en;
+     }
+ }
+ 
++STATIC_OVL void
++ugrowup()
++     /* uses altered code from grow_up() */
++{
++  /* If the player is a monster that grows up, check if necessary
++     and if so handle the growing-up process                      */
++  int newtype,oldtype,polyd;
++  struct permonst *ptr;
++#ifdef ALIGN_INITPOLY
++  aligntyp alignment;
++#endif
++
++  polyd=Upolyd;
++
++  if(Unchanging)
++    return;
++  /* must be done twice, once for the 'real' race, once for the
++     poly'd type                                                  */
++  oldtype = u.umonnum;
++  newtype = little_to_big(oldtype);
++  /* assumed that player will not be a priest :) */
++  if(u.ulevel >= mons[newtype].mlevel && newtype != oldtype){
++    ptr = &mons[newtype];
++    if (mvitals[newtype].mvflags & G_GENOD) {
++      pline("As you grow into %s, you %s.", an(ptr->mname),
++	    nonliving(ptr) ? "expire" : "die");
++      done(GENOCIDED);
++    }
++    polymon(newtype);
++    if(!polyd){
++      /* Make this the base monster type */
++      u.umonster = u.umonnum;
++      u.mtimedone = 0;
++    }
++  }
++  if(polyd){
++    /* Player was polymorphed, make normal form grow too. */
++    oldtype = u.umonster;
++    newtype = little_to_big(oldtype);
++    if(u.ulevel >= mons[newtype].mlevel && newtype != oldtype){
++      u.umonster = newtype;
++      You("feel more mature.");
++    }
++  }
++
++#ifdef ALIGN_INITPOLY
++    /* adjust alignment (from pline.c:mstatusline:280) */
++  alignment = mons[u.umonnum].maligntyp;
++  alignment = (alignment > 0) ? A_LAWFUL :
++		(alignment < 0) ? A_CHAOTIC :
++		A_NEUTRAL;
++  if (u.ualign.type != alignment) {
++	  Your("mind oscillates for a moment.");
++	  u.ualignbase[A_CURRENT] = u.ualign.type = alignment;
++  }
++#endif
++}
++
+ /* calculate spell power/energy points for new level */
+ int
+ newpw()
+@@ -242,6 +301,7 @@ const char *drainer; /* cause of death, if drain should be fatal */
+     }
+ 
+     context.botl = 1;
++    ugrowup();
+ }
+ 
+ /*
+diff --git a/src/mapglyph.c b/src/mapglyph.c
+index a8f5638..de6c941 100644
+--- a/src/mapglyph.c
++++ b/src/mapglyph.c
+@@ -208,7 +208,11 @@ unsigned *ospecial;
+ #ifdef TEXTCOLOR
+             /* special case the hero for `showrace' option */
+             if (iflags.use_color && x == u.ux && y == u.uy
++#ifdef INITPOLY
++	        && flags.showrace && !Upolyd && !Uinitpolyd)
++#else
+                 && flags.showrace && !Upolyd)
++#endif
+                 color = HI_DOMESTIC;
+ #endif
+         }
+diff --git a/src/pager.c b/src/pager.c
+index 0a4fc87..f8fc000 100644
+--- a/src/pager.c
++++ b/src/pager.c
+@@ -612,7 +612,11 @@ const char **firstmatch;
+     if ((looked ? (sym == showsyms[S_HUMAN + SYM_OFF_M]
+                    && cc.x == u.ux && cc.y == u.uy)
+                 : (sym == def_monsyms[S_HUMAN].sym && !flags.showrace))
++#ifdef INITPOLY
++        && !(Race_if(PM_HUMAN) || Race_if(PM_ELF)) && !Upolyd && !Uinitpolyd)
++#else
+         && !(Race_if(PM_HUMAN) || Race_if(PM_ELF)) && !Upolyd)
++#endif
+         found += append_str(out_str, "you"); /* tack on "or you" */
+ 
+     /* Now check for objects */
+diff --git a/src/polyself.c b/src/polyself.c
+index 4cd01d0..d31a82a 100644
+--- a/src/polyself.c
++++ b/src/polyself.c
+@@ -260,6 +260,9 @@ newman()
+     oldlvl = u.ulevel;
+     newlvl = oldlvl + rn1(5, -2);     /* new = old + {-2,-1,0,+1,+2} */
+     if (newlvl > 127 || newlvl < 1) { /* level went below 0? */
++#ifdef INITPOLY
++	if (moves > 1) /* don't kill the player on their first turn */
++#endif
+         goto dead; /* old level is still intact (in case of lifesaving) */
+     }
+     if (newlvl > MAXULEV)
+@@ -336,7 +339,11 @@ newman()
+     if (Stoned)
+         make_stoned(0L, (char *) 0, 0, (char *) 0);
+     if (u.uhp <= 0) {
++#ifdef INITPOLY
++	if (Polymorph_control || (moves <= 1)) {
++#else      
+         if (Polymorph_control) { /* even when Stunned || Unaware */
++#endif		
+             if (u.uhp <= 0)
+                 u.uhp = 1;
+         } else {
+@@ -563,7 +570,11 @@ int psflags;
+     sex_change_ok--; /* reset */
+ 
+ made_change:
++#ifdef INITPOLY
++    new_light = (emits_light(youmonst.data) && Upolyd);
++#else
+     new_light = emits_light(youmonst.data);
++#endif
+     if (old_light != new_light) {
+         if (old_light)
+             del_light_source(LS_MONSTER, monst_to_any(&youmonst));
+@@ -1008,16 +1019,25 @@ void
+ rehumanize()
+ {
+     /* You can't revert back while unchanging */
++#ifdef INITPOLY
++    /* neither if you initpolymorphed */
++    if ((Unchanging  && (u.mh < 1)) || (!Upolyd && Uinitpolyd))  {
++#else
+     if (Unchanging && (u.mh < 1)) {
+-        killer.format = NO_KILLER_PREFIX;
++#endif
++	killer.format = NO_KILLER_PREFIX;
+         Strcpy(killer.name, "killed while stuck in creature form");
+         done(DIED);
+     }
+ 
+     if (emits_light(youmonst.data))
+         del_light_source(LS_MONSTER, monst_to_any(&youmonst));
++#ifdef INITPOLY
++    polyman("change back into %s form!", mons[u.umonster].mname);
++#else
+     polyman("return to %s form!", urace.adj);
+-
++#endif
++    
+     if (u.uhp < 1) {
+         /* can only happen if some bit of code reduces u.uhp
+            instead of u.mh while poly'd */
+diff --git a/src/uhitm.c b/src/uhitm.c
+index d41f716..fdd9e85 100644
+--- a/src/uhitm.c
++++ b/src/uhitm.c
+@@ -245,9 +245,13 @@ int *attk_count, *role_roll_penalty;
+ 
+     *role_roll_penalty = 0; /* default is `none' */
+ 
++#ifdef INITPOLY
++    tmp = 1 + Luck + abon() + find_mac(mtmp) + u.uhitinc;
++    tmp += (maybe_polyd(youmonst.data->mlevel, u.ulevel) || Uinitpolyd);
++#else
+     tmp = 1 + Luck + abon() + find_mac(mtmp) + u.uhitinc
+           + maybe_polyd(youmonst.data->mlevel, u.ulevel);
+-
++#endif
+     /* some actions should occur only once during multiple attacks */
+     if (!(*attk_count)++) {
+         /* knight's chivalry or samurai's giri */
+@@ -370,8 +374,12 @@ register struct monst *mtmp;
+     if (attack_checks(mtmp, uwep))
+         return TRUE;
+ 
++#ifdef INITPOLY
++    if ((Upolyd || Uinitpolyd) && noattacks(youmonst.data))) {
++#else
+     if (Upolyd && noattacks(youmonst.data)) {
+-        /* certain "pacifist" monsters don't attack */
++#endif
++	/* certain "pacifist" monsters don't attack */
+         You("have no way to attack monsters physically.");
+         mtmp->mstrategy &= ~STRAT_WAITMASK;
+         goto atk_done;
+@@ -410,7 +418,11 @@ register struct monst *mtmp;
+             || mtmp->my != u.uy + u.dy)) /* it moved */
+         return FALSE;
+ 
++#ifdef INITPOLY
++    if (Upolyd || Uinitpolyd)
++#else
+     if (Upolyd)
++#endif
+         (void) hmonas(mtmp);
+     else
+         (void) hitum(mtmp, youmonst.data->mattk);
+@@ -1043,7 +1055,12 @@ int thrown; /* HMON_xxx (0 => hand-to-hand, other => ranged) */
+                 already_killed = TRUE;
+         }
+         hittxt = TRUE;
++#ifdef INITPOLY
++    } else if (unarmed && tmp > 1 && !thrown && !obj &&
++	       !Upolyd && !Uinitpolyd) {
++#else
+     } else if (unarmed && tmp > 1 && !thrown && !obj && !Upolyd) {
++#endif
+         /* VERY small chance of stunning opponent if unarmed. */
+         if (rnd(100) < P_SKILL(P_BARE_HANDED_COMBAT) && !bigmonst(mdat)
+             && !thick_skinned(mdat)) {

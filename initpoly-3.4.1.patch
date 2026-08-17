@@ -1,0 +1,681 @@
+Index: nethack-initpoly/include/config.h
+diff -c nethack-initpoly/include/config.h:1.1.1.1 nethack-initpoly/include/config.h:1.2
+*** nethack-initpoly/include/config.h:1.1.1.1	Fri May 16 21:06:18 2003
+--- nethack-initpoly/include/config.h	Fri May 16 21:09:09 2003
+***************
+*** 352,357 ****
+--- 352,364 ----
+  
+  /*#define GOLDOBJ */	/* Gold is kept on obj chains - Helge Hafting */
+  
++ #define INITPOLY	/* Prompt to select non-standard initial race */
++ 
++ #define ALWAYS_INITPOLY 
++ 			/* Prompt when not in explore or wizard mode */
++ 
++ #define ALIGN_INITPOLY  /* change alignment according to polymorphed form */
++ 
+  /* End of Section 5 */
+  
+  #include "global.h"	/* Define everything else according to choices above */
+Index: nethack-initpoly/include/decl.h
+diff -c nethack-initpoly/include/decl.h:1.1.1.1 nethack-initpoly/include/decl.h:1.2
+*** nethack-initpoly/include/decl.h:1.1.1.1	Fri May 16 21:06:18 2003
+--- nethack-initpoly/include/decl.h	Fri May 16 21:09:09 2003
+***************
+*** 371,376 ****
+--- 371,383 ----
+  E char *fqn_prefix_names[PREFIX_COUNT];
+  #endif
+  
++ #ifdef INITPOLY
++ E NEARDATA int polyflags; /* Use for flags modifying the polymorph system. */
++ #define POLYFLAGS_INITPOLY 1 /* Player is initpoly'd */
++ #define POLYFLAGS_PERSISTENT POLYFLAGS_INITPOLY /* Flags that should not be reset after one-time uses. */
++ #define Uinitpolyd (polyflags | POLYFLAGS_INITPOLY)
++ #endif
++ 
+  #undef E
+  
+  #endif /* DECL_H */
+Index: nethack-initpoly/include/youprop.h
+diff -c nethack-initpoly/include/youprop.h:1.1.1.1 nethack-initpoly/include/youprop.h:1.2
+*** nethack-initpoly/include/youprop.h:1.1.1.1	Fri May 16 21:06:18 2003
+--- nethack-initpoly/include/youprop.h	Fri May 16 21:09:09 2003
+***************
+*** 70,77 ****
+--- 70,82 ----
+  
+  /* Extrinsics only */
+  #define EAntimagic		u.uprops[ANTIMAGIC].extrinsic
++ #ifdef INITPOLY
++ #define Antimagic		(EAntimagic || \
++ 				 ((Upolyd || Uinitpolyd) && resists_magm(&youmonst)))
++ #else
+  #define Antimagic		(EAntimagic || \
+  				 (Upolyd && resists_magm(&youmonst)))
++ #endif
+  
+  #define EAcid_resistance	u.uprops[ACID_RES].extrinsic
+  #define Acid_resistance		(EAcid_resistance || resists_acid(&youmonst))
+***************
+*** 111,118 ****
+--- 116,128 ----
+  /* Hallucination is solely a timeout; its resistance is extrinsic */
+  #define HHallucination		u.uprops[HALLUC].intrinsic
+  #define EHalluc_resistance	u.uprops[HALLUC_RES].extrinsic
++ #ifdef INITPOLY
++ #define Halluc_resistance	(EHalluc_resistance || \
++ 				 (dmgtype(youmonst.data, AD_HALU)))
++ #else
+  #define Halluc_resistance	(EHalluc_resistance || \
+  				 (Upolyd && dmgtype(youmonst.data, AD_HALU)))
++ #endif
+  #define Hallucination		(HHallucination && !Halluc_resistance)
+  
+  /* Timeout, plus a worn mask */
+Index: nethack-initpoly/src/allmain.c
+diff -c nethack-initpoly/src/allmain.c:1.1.1.1 nethack-initpoly/src/allmain.c:1.2
+*** nethack-initpoly/src/allmain.c:1.1.1.1	Fri May 16 21:06:18 2003
+--- nethack-initpoly/src/allmain.c	Fri May 16 21:09:18 2003
+***************
+*** 10,15 ****
+--- 10,36 ----
+  #include <signal.h>
+  #endif
+  
++ static const int player_classes[] =
++   {
++     PM_ARCHEOLOGIST,
++     PM_BARBARIAN,
++     PM_CAVEMAN,
++     PM_CAVEWOMAN,
++     PM_HEALER,
++     PM_KNIGHT,
++     PM_MONK,
++     PM_PRIEST,
++     PM_PRIESTESS,
++     PM_RANGER,
++     PM_ROGUE,
++     PM_SAMURAI,
++     PM_TOURIST,
++     PM_VALKYRIE,
++     PM_WIZARD,
++     -1
++   };
++ 
++ 
+  #ifdef POSITIONBAR
+  STATIC_DCL void NDECL(do_positionbar);
+  #endif
+***************
+*** 478,483 ****
+--- 499,507 ----
+  newgame()
+  {
+  	int i;
++ #ifdef ALIGN_INITPOLY
++ 	aligntyp alignment;
++ #endif
+  
+  #ifdef MFLOPPY
+  	gameDiskPrompt();
+***************
+*** 529,534 ****
+--- 553,613 ----
+  		com_pager(1);
+  	}
+  
++ #ifdef INITPOLY
++ 	if((
++ #ifdef ALWAYS_INITPOLY
++ 	    1 ||
++ #endif
++ 	    discover
++ #ifdef WIZARD
++ 	   || wizard
++ #endif
++ 	    ) && (yn("Do you wish to permanently polymorph into a non-default race?") == 'y')){
++ 	  /*		polyself(1);*/
++ 	  
++ 	  int mntmp = LOW_PM - 1;
++ 	  char buf[BUFSZ];
++ 	  while(mntmp < LOW_PM){
++ 	    getlin("Start as what kind of monster? [type the name]",buf);
++ 	    mntmp = name_to_mon(buf);
++ 	    if (mntmp < LOW_PM)
++ 	      pline("I've never heard of such monsters.");
++ 	    if(
++ 	       (mntmp == PM_HUMAN) ||
++ 	       (mntmp == PM_ELF  ) ||
++ 	       (mntmp == PM_DWARF) ||
++ 	       (mntmp == PM_GNOME) ||
++ 	       (mntmp == PM_ORC)
++ 	       ){
++ 	      pline("Just choose that at the race selection screen!");
++ 	      mntmp = LOW_PM - 1;
++ 	    }
++ #ifndef INITPOLY_WILD_SILLY_FUN
++ 	    /* Don't polymorph into anything unique, like DEATH... unless you want to forgoe all hopes of seriousness :) */
++ 	    if(mntmp >= LOW_PM && !polyok(&mons[mntmp])){
++ 	      pline("You can't start as that!");
++ 	      mntmp = LOW_PM - 1;
++ 	    }
++ #endif
++ 	  }
++ 	  polymon(mntmp);
++ 	  u.mtimedone = 0;
++ 	  u.umonster = u.umonnum;
++ #ifdef ALIGN_INITPOLY
++ 	  /* adjust alignment (from pline.c:mstatusline:280) */
++ 	  alignment = mons[u.umonnum].maligntyp;
++ 	  alignment = (alignment > 0) ? A_LAWFUL :
++ 	    (alignment < 0) ? A_CHAOTIC :
++ 	    A_NEUTRAL;
++ 	  if (u.ualign.type != alignment) {
++ 	    Your("mind oscillates for a moment.");
++ 	    u.ualignbase[A_CURRENT] = u.ualignbase[A_ORIGINAL] = u.ualign.type = alignment;
++ 	  }
++ 	  docrt();
++ #endif
++ 	} 
++ #endif
++ 
+  #ifdef INSURANCE
+  	save_currentstate();
+  #endif
+***************
+*** 545,550 ****
+--- 624,633 ----
+  boolean new_game;	/* false => restoring an old game */
+  {
+      char buf[BUFSZ];
++     const char *racename;
++ #ifdef INITPOLY
++     const int *pc_current = player_classes;
++ #endif
+      boolean currentgend = Upolyd ? u.mfemale : flags.female;
+  
+      /*
+***************
+*** 562,571 ****
+  	    (new_game ? (urole.allow & ROLE_GENDMASK) == (ROLE_MALE|ROLE_FEMALE) :
+  	     currentgend != flags.initgend))
+  	Sprintf(eos(buf), " %s", genders[currentgend].adj);
+  
+      pline(new_game ? "%s %s, welcome to NetHack!  You are a%s %s %s."
+  		   : "%s %s, the%s %s %s, welcome back to NetHack!",
+! 	  Hello((struct monst *) 0), plname, buf, urace.adj,
+  	  (currentgend && urole.name.f) ? urole.name.f : urole.name.m);
+  }
+  
+--- 645,690 ----
+  	    (new_game ? (urole.allow & ROLE_GENDMASK) == (ROLE_MALE|ROLE_FEMALE) :
+  	     currentgend != flags.initgend))
+  	Sprintf(eos(buf), " %s", genders[currentgend].adj);
++ #ifdef INITPOLY
++     if(
++        (u.umonnum != PM_HUMAN) && 
++        (u.umonnum != PM_ELF  ) && 
++        (u.umonnum != PM_DWARF) && 
++        (u.umonnum != PM_GNOME) && 
++        (u.umonnum != PM_ORC  )
++        ){
++       polyflags |= POLYFLAGS_INITPOLY;
++     }
++ 
++     if(!Uinitpolyd)
++ #endif
++       racename= urace.adj;
++ #ifdef INITPOLY
++     else
++       racename = mons[u.umonster].mname;
++ #endif
++ 
++ #ifdef INITPOLY
++     polyflags |= POLYFLAGS_INITPOLY;
++     while(*pc_current != -1){
++       if(*pc_current == u.umonnum){
++ 	polyflags &= ~POLYFLAGS_INITPOLY;
++ 	break;
++       }
++       pc_current++;
++     }
++ 
++     if(!Uinitpolyd)
++ #endif
++       racename= urace.adj;
++ #ifdef INITPOLY
++     else
++       racename = mons[u.umonster].mname;
++ #endif
+  
+      pline(new_game ? "%s %s, welcome to NetHack!  You are a%s %s %s."
+  		   : "%s %s, the%s %s %s, welcome back to NetHack!",
+! 	  Hello((struct monst *) 0), plname, buf, racename,
+  	  (currentgend && urole.name.f) ? urole.name.f : urole.name.m);
+  }
+  
+Index: nethack-initpoly/src/cmd.c
+diff -c nethack-initpoly/src/cmd.c:1.1.1.1 nethack-initpoly/src/cmd.c:1.2
+*** nethack-initpoly/src/cmd.c:1.1.1.1	Fri May 16 21:06:18 2003
+--- nethack-initpoly/src/cmd.c	Fri May 16 21:09:18 2003
+***************
+*** 466,472 ****
+--- 466,476 ----
+  	    if(u.uburied)
+  		pline("Unfortunately sound does not carry well through rock.");
+  	    else aggravate();
++ #ifdef INITPOLY
++ 	} else if (Upolyd || Uinitpolyd)
++ #else
+  	} else if (Upolyd)
++ #endif
+  		pline("Any special ability you may have is purely reflexive.");
+  	else You("don't have a special ability in your normal form!");
+  	return 0;
+***************
+*** 1163,1169 ****
+--- 1167,1177 ----
+  	/* Current name, race, role, gender */
+  	add_menu(tmpwin, NO_GLYPH, &any, 0, 0, ATR_NONE, "", FALSE);
+  	add_menu(tmpwin, NO_GLYPH, &any, 0, 0, ATR_BOLD, "Current", FALSE);
++ #ifdef INITPOLY
++ 	Sprintf(buf, fmtstr, "race", (Upolyd || Uinitpolyd) ? youmonst.data->mname : urace.noun);
++ #else
+  	Sprintf(buf, fmtstr, "race", Upolyd ? youmonst.data->mname : urace.noun);
++ #endif
+  	add_menu(tmpwin, NO_GLYPH, &any, 0, 0, ATR_NONE, buf, FALSE);
+  	if (Upolyd) {
+  	    Sprintf(buf, fmtstr, "role (base)",
+Index: nethack-initpoly/src/decl.c
+diff -c nethack-initpoly/src/decl.c:1.1.1.1 nethack-initpoly/src/decl.c:1.2
+*** nethack-initpoly/src/decl.c:1.1.1.1	Fri May 16 21:06:18 2003
+--- nethack-initpoly/src/decl.c	Fri May 16 21:09:18 2003
+***************
+*** 271,276 ****
+--- 271,278 ----
+  					"lockdir", "configdir", "troubledir" };
+  #endif
+  
++ NEARDATA int polyflags = 0;
++ 
+  /* dummy routine used to force linkage */
+  void
+  decl_init()
+Index: nethack-initpoly/src/engrave.c
+diff -c nethack-initpoly/src/engrave.c:1.1.1.1 nethack-initpoly/src/engrave.c:1.2
+*** nethack-initpoly/src/engrave.c:1.1.1.1	Fri May 16 21:06:18 2003
+--- nethack-initpoly/src/engrave.c	Fri May 16 21:09:18 2003
+***************
+*** 491,497 ****
+--- 491,501 ----
+  		You_cant("write in thin air!");
+  		return(0);
+  	}
++ #ifdef INITPOLY
++ 	if (cantwield(youmonst.data) && !attacktype(youmonst.data, AT_CLAW)) {
++ #else
+  	if (cantwield(youmonst.data)) {
++ #endif
+  		You_cant("even hold anything!");
+  		return(0);
+  	}
+***************
+*** 500,508 ****
+  	/* One may write with finger, or weapon, or wand, or..., or...
+  	 * Edited by GAN 10/20/86 so as not to change weapon wielded.
+  	 */
+! 
+  	otmp = getobj(styluses, "write with");
+  	if(!otmp) return(0);		/* otmp == zeroobj if fingers */
+  
+  	if (otmp == &zeroobj) writer = makeplural(body_part(FINGER));
+  	else writer = xname(otmp);
+--- 504,520 ----
+  	/* One may write with finger, or weapon, or wand, or..., or...
+  	 * Edited by GAN 10/20/86 so as not to change weapon wielded.
+  	 */
+! #ifdef INITPOLY
+! 	if (cantwield(youmonst.data) && attacktype(youmonst.data, AT_CLAW)) {
+! 		otmp = &zeroobj;
+! 	} else {
+! #endif
+  	otmp = getobj(styluses, "write with");
+  	if(!otmp) return(0);		/* otmp == zeroobj if fingers */
++ 
++ #ifdef INITPOLY
++ 	}
++ #endif
+  
+  	if (otmp == &zeroobj) writer = makeplural(body_part(FINGER));
+  	else writer = xname(otmp);
+Index: nethack-initpoly/src/exper.c
+diff -c nethack-initpoly/src/exper.c:1.1.1.1 nethack-initpoly/src/exper.c:1.2
+*** nethack-initpoly/src/exper.c:1.1.1.1	Fri May 16 21:06:18 2003
+--- nethack-initpoly/src/exper.c	Fri May 16 21:09:18 2003
+***************
+*** 6,11 ****
+--- 6,12 ----
+  
+  STATIC_DCL long FDECL(newuexp, (int));
+  STATIC_DCL int FDECL(enermod, (int));
++ STATIC_DCL void FDECL(ugrowup, ());
+  
+  STATIC_OVL long
+  newuexp(lev)
+***************
+*** 35,40 ****
+--- 36,99 ----
+  	}
+  }
+  
++ STATIC_OVL void
++ ugrowup()
++      /* uses altered code from grow_up() */
++ {
++   /* If the player is a monster that grows up, check if necessary
++      and if so handle the growing-up process                      */
++   int newtype,oldtype,polyd;
++   struct permonst *ptr;
++ #ifdef ALIGN_INITPOLY
++   aligntyp alignment;
++ #endif
++ 
++   polyd=Upolyd;
++ 
++   if(Unchanging)
++     return;
++   /* must be done twice, once for the 'real' race, once for the
++      poly'd type                                                  */
++   oldtype = u.umonnum;
++   newtype = little_to_big(oldtype);
++   /* assumed that player will not be a priest :) */
++   if(u.ulevel >= mons[newtype].mlevel && newtype != oldtype){
++     ptr = &mons[newtype];
++     if (mvitals[newtype].mvflags & G_GENOD) {
++       pline("As you grow into %s, you %s.", an(ptr->mname),
++ 	    nonliving(ptr) ? "expire" : "die");
++       done(GENOCIDED);
++     }
++     polymon(newtype);
++     if(!polyd){
++       /* Make this the base monster type */
++       u.umonster = u.umonnum;
++       u.mtimedone = 0;
++     }
++   }
++   if(polyd){
++     /* Player was polymorphed, make normal form grow too. */
++     oldtype = u.umonster;
++     newtype = little_to_big(oldtype);
++     if(u.ulevel >= mons[newtype].mlevel && newtype != oldtype){
++       u.umonster = newtype;
++       You("feel more mature.");
++     }
++   }
++ 
++ #ifdef ALIGN_INITPOLY
++     /* adjust alignment (from pline.c:mstatusline:280) */
++   alignment = mons[u.umonnum].maligntyp;
++   alignment = (alignment > 0) ? A_LAWFUL :
++ 		(alignment < 0) ? A_CHAOTIC :
++ 		A_NEUTRAL;
++   if (u.ualign.type != alignment) {
++ 	  Your("mind oscillates for a moment.");
++ 	  u.ualignbase[A_CURRENT] = u.ualign.type = alignment;
++   }
++ #endif
++ }
++ 
+  int
+  experience(mtmp, nk)	/* return # of exp points for mtmp after nk killed */
+  	register struct	monst *mtmp;
+***************
+*** 215,220 ****
+--- 274,280 ----
+  	    reset_rndmonst(NON_PM);		/* new monster selection */
+  	}
+  	flags.botl = 1;
++ 	ugrowup();
+  }
+  
+  /* compute a random amount of experience points suitable for the hero's
+Index: nethack-initpoly/src/hack.c
+diff -c nethack-initpoly/src/hack.c:1.1.1.1 nethack-initpoly/src/hack.c:1.2
+*** nethack-initpoly/src/hack.c:1.1.1.1	Fri May 16 21:06:18 2003
+--- nethack-initpoly/src/hack.c	Fri May 16 21:09:18 2003
+***************
+*** 282,288 ****
+  		break;
+  	    }
+  
+! 	    if (
+  #ifdef STEED
+  		!u.usteed &&
+  #endif	    
+--- 282,288 ----
+  		break;
+  	    }
+  
+! 	    if (!bigmonst(youmonst.data) &&
+  #ifdef STEED
+  		!u.usteed &&
+  #endif	    
+Index: nethack-initpoly/src/mapglyph.c
+diff -c nethack-initpoly/src/mapglyph.c:1.1.1.1 nethack-initpoly/src/mapglyph.c:1.2
+*** nethack-initpoly/src/mapglyph.c:1.1.1.1	Fri May 16 21:06:18 2003
+--- nethack-initpoly/src/mapglyph.c	Sat May 17 15:28:45 2003
+***************
+*** 202,208 ****
+  	    /* special case the hero for `showrace' option */
+  #ifdef TEXTCOLOR
+  	    if (iflags.use_color && x == u.ux && y == u.uy &&
+! 		    iflags.showrace && !Upolyd)
+  		color = HI_DOMESTIC;
+  #endif
+  	}
+--- 202,208 ----
+  	    /* special case the hero for `showrace' option */
+  #ifdef TEXTCOLOR
+  	    if (iflags.use_color && x == u.ux && y == u.uy &&
+! 		    iflags.showrace && !Upolyd && !Uinitpolyd)
+  		color = HI_DOMESTIC;
+  #endif
+  	}
+Index: nethack-initpoly/src/pager.c
+diff -c nethack-initpoly/src/pager.c:1.1.1.1 nethack-initpoly/src/pager.c:1.2
+*** nethack-initpoly/src/pager.c:1.1.1.1	Fri May 16 21:06:18 2003
+--- nethack-initpoly/src/pager.c	Sat May 17 15:28:45 2003
+***************
+*** 578,584 ****
+  	if ((from_screen ?
+  		(sym == monsyms[S_HUMAN] && cc.x == u.ux && cc.y == u.uy) :
+  		(sym == def_monsyms[S_HUMAN] && !iflags.showrace)) &&
+! 	    !(Race_if(PM_HUMAN) || Race_if(PM_ELF)) && !Upolyd)
+  	    found += append_str(out_str, "you");	/* tack on "or you" */
+  
+  	/*
+--- 578,584 ----
+  	if ((from_screen ?
+  		(sym == monsyms[S_HUMAN] && cc.x == u.ux && cc.y == u.uy) :
+  		(sym == def_monsyms[S_HUMAN] && !iflags.showrace)) &&
+! 	    !(Race_if(PM_HUMAN) || Race_if(PM_ELF)) && !Upolyd && !Uinitpolyd)
+  	    found += append_str(out_str, "you");	/* tack on "or you" */
+  
+  	/*
+Index: nethack-initpoly/src/polyself.c
+diff -c nethack-initpoly/src/polyself.c:1.1.1.1 nethack-initpoly/src/polyself.c:1.2
+*** nethack-initpoly/src/polyself.c:1.1.1.1	Fri May 16 21:06:18 2003
+--- nethack-initpoly/src/polyself.c	Fri May 16 21:09:18 2003
+***************
+*** 141,147 ****
+--- 141,152 ----
+  	u.ulevel = u.ulevel + rn1(5, -2);
+  	if (u.ulevel > 127 || u.ulevel < 1) { /* level went below 0? */
+  	    u.ulevel = oldlvl; /* restore old level in case they lifesave */
++ #ifdef INITPOLY
++ 	    if (moves > 1)
+  	    goto dead;
++ #else
++ 	    goto dead;
++ #endif
+  	}
+  	if (u.ulevel > MAXULEV) u.ulevel = MAXULEV;
+  	/* If your level goes down, your peak level goes down by
+***************
+*** 194,200 ****
+--- 199,209 ----
+  	Stoned = 0;
+  	delayed_killer = 0;
+  	if (u.uhp <= 0 || u.uhpmax <= 0) {
++ #ifdef INITPOLY
++ 		if (Polymorph_control || (moves <= 1)) {
++ #else
+  		if (Polymorph_control) {
++ #endif
+  		    if (u.uhp <= 0) u.uhp = 1;
+  		    if (u.uhpmax <= 0) u.uhpmax = 1;
+  		} else {
+***************
+*** 234,240 ****
+  	boolean iswere = (u.ulycn >= LOW_PM || is_were(youmonst.data));
+  	boolean isvamp = (youmonst.data->mlet == S_VAMPIRE || u.umonnum == PM_VAMPIRE_BAT);
+  
+!         if(!Polymorph_control && !forcecontrol && !draconian && !iswere && !isvamp) {
+  	    if (rn2(20) > ACURR(A_CON)) {
+  		You(shudder_for_moment);
+  		losehp(rnd(30), "system shock", KILLED_BY_AN);
+--- 243,251 ----
+  	boolean iswere = (u.ulycn >= LOW_PM || is_were(youmonst.data));
+  	boolean isvamp = (youmonst.data->mlet == S_VAMPIRE || u.umonnum == PM_VAMPIRE_BAT);
+  
+! 
+!         if(!Polymorph_control && !forcecontrol && !draconian && !iswere && !isvamp)
+!  {
+  	    if (rn2(20) > ACURR(A_CON)) {
+  		You(shudder_for_moment);
+  		losehp(rnd(30), "system shock", KILLED_BY_AN);
+***************
+*** 701,715 ****
+--- 712,739 ----
+  rehumanize()
+  {
+  	/* You can't revert back while unchanging */
++ #ifdef INITPOLY
++ 	/* neither if you initpolymorphed */
++ 	if ((Unchanging  && (u.mh < 1)) || (!Upolyd && Uinitpolyd))  {
++ #else
+  	if (Unchanging && (u.mh < 1)) {
++ #endif
+  		killer_format = NO_KILLER_PREFIX;
+  		killer = "killed while stuck in creature form";
+  		done(DIED);
+  	}
+  
++ #ifdef INITPOLY
++ 	if (emits_light(youmonst.data) && Upolyd)
++ #else
+  	if (emits_light(youmonst.data))
++ #endif
+  	    del_light_source(LS_MONSTER, (genericptr_t)&youmonst);
++ #ifdef INITPOLY
++ 	polyman("change back into %s form!", mons[u.umonster].mname);
++ #else
+  	polyman("return to %s form!", urace.adj);
++ #endif
+  
+  	if (u.uhp < 1) {
+  	    char kbuf[256];
+Index: nethack-initpoly/src/uhitm.c
+diff -c nethack-initpoly/src/uhitm.c:1.1.1.1 nethack-initpoly/src/uhitm.c:1.2
+*** nethack-initpoly/src/uhitm.c:1.1.1.1	Fri May 16 21:06:18 2003
+--- nethack-initpoly/src/uhitm.c	Fri May 16 21:09:18 2003
+***************
+*** 280,286 ****
+   *	attacks.  It is therefore wrong to add hitval to tmp; we must add
+   *	it only for the specific attack (in hmonas()).
+   */
+! 	if (uwep && !Upolyd) {
+  		tmp += hitval(uwep, mtmp);
+  		tmp += weapon_hit_bonus(uwep);
+  	}
+--- 280,290 ----
+   *	attacks.  It is therefore wrong to add hitval to tmp; we must add
+   *	it only for the specific attack (in hmonas()).
+   */
+! #ifdef INITPOLY
+! 	if (uwep && !Upolyd && !Uinitpolyd) {
+! #else
+!         if (uwep && !Upolyd) {
+! #endif
+  		tmp += hitval(uwep, mtmp);
+  		tmp += weapon_hit_bonus(uwep);
+  	}
+***************
+*** 348,354 ****
+--- 352,362 ----
+  	override_confirmation = FALSE;
+  	if (attack_checks(mtmp, uwep)) return(TRUE);
+  
++ #ifdef INITPOLY
++ 	if (Upolyd || Uinitpolyd) {
++ #else
+  	if (Upolyd) {
++ #endif
+  		/* certain "pacifist" monsters don't attack */
+  		if(noattacks(youmonst.data)) {
+  			You("have no way to attack monsters physically.");
+***************
+*** 388,394 ****
+--- 396,406 ----
+  		return(FALSE);
+  
+  	tmp = find_roll_to_hit(mtmp);
++ #ifdef INITPOLY
++ 	if (Upolyd || Uinitpolyd)
++ #else
+  	if (Upolyd)
++ #endif
+  		(void) hmonas(mtmp, tmp);
+  	else
+  		(void) hitum(mtmp, tmp, youmonst.data->mattk);
+***************
+*** 949,955 ****
+  #endif
+  
+  	/* VERY small chance of stunning opponent if unarmed. */
+! 	if (unarmed && tmp > 1 && !thrown && !obj && !Upolyd) {
+  	    if (rnd(100) < P_SKILL(P_BARE_HANDED_COMBAT) &&
+  			!bigmonst(mdat) && !thick_skinned(mdat)) {
+  		if (canspotmon(mon))
+--- 961,975 ----
+  #endif
+  
+  	/* VERY small chance of stunning opponent if unarmed. */
+! 
+! 	  /* this might have to be changes later. A dragon bashing
+! 	   * somebodies head in definatly should get a chance to
+! 	   * stun that sombody... */
+! 	if (unarmed && tmp > 1 && !thrown && !obj && !Upolyd
+! #ifdef INITPOLY
+! 	    && !Uinitpolyd
+! #endif
+! 	    ) {
+  	    if (rnd(100) < P_SKILL(P_BARE_HANDED_COMBAT) &&
+  			!bigmonst(mdat) && !thick_skinned(mdat)) {
+  		if (canspotmon(mon))
+***************
+*** 2081,2087 ****
+--- 2101,2111 ----
+  		(void) passive(mon, sum[i], 1, mattk->aatyp);
+  		nsum |= sum[i];
+  	    }
++ #ifdef INITPOLY
++ 	    if (!Upolyd && !Uinitpolyd)
++ #else
+  	    if (!Upolyd)
++ #endif
+  		break; /* No extra attacks if no longer a monster */
+  	    if (multi < 0)
+  		break; /* If paralyzed while attacking, i.e. floating eye */
