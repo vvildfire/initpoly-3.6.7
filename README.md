@@ -9,7 +9,7 @@ You can also 'grow up', e.g. baby dragon -> dragon, or kitten -> housecat. This 
 
 You can, of course, still polyself into another form later in the game. For silver-hating forms and forms without hands, doing so is necessary to complete the game.
 
-Available in both patch and binary ("ready-to-run") form.
+Available in both patch and windows binary ("ready-to-run") form.
 
 Apply the patch to the nethack 3.6.7 sources by being in the nethack-3.6.7/ directory and running
 #>patch -p1 < /path/to/initpoly-3.6.7.patch
