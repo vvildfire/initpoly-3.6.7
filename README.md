@@ -1,13 +1,11 @@
-# initpoly
-Nethack 3.6.7 initpoly patch
+# Nethack initpoly patch
+Updated for 3.6.7. Still a WIP; some features may be bugged.
 
 Idea from r.g.r.n, implemented by bd (from r.g.r.n), ported to 3.6.0 by BugsBunnySan and then to 3.6.7 by vvildfire.
 
-This patch allows one to select a non-default form when starting the game, with all the benefits and drawbacks that comes with. This form does not time out; rather, it becomes your new base form.
+This patch allows one to select a non-default form when starting the game, with all the benefits and drawbacks that comes with. This form does not time out; rather, it becomes your new base form. As such, you can still polyself into another form later in the game. For silver-hating forms and forms without hands, doing so is necessary to complete the game.
 
 You can also 'grow up', e.g. baby dragon -> dragon, or kitten -> housecat. This works both on your true form and a polymorphed form, and even both at once. In versions prior to 3.6.7 this is bugged and only activates when level-drained, e.g. by the touch of a wraith.
-
-You can, of course, still polyself into another form later in the game. For silver-hating forms and forms without hands, doing so is necessary to complete the game.
 
 Available in both patch and windows binary ("ready-to-run") form.
 
@@ -25,4 +23,4 @@ Historically from a discussion on rec.games.roguelike.nethack:
 
 https://groups.google.com/forum/#!searchin/rec.games.roguelike.nethack/initpoly|sort:relevance/rec.games.roguelike.nethack/b-ezWumIOr4/a-wsMDQ01lgJ
 
-(and search for initpoly in that newsgroup)
+(search for initpoly in that newsgroup)
